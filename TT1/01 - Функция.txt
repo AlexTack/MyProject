@@ -1,0 +1,67 @@
+create or replace function parse_xml (in xml_file xml, out status text)
+returns text as $body$
+
+declare
+is_doc text;
+i int = coalesce ((select max (id) from xmltest),0);
+data record;
+_code text;
+_name text;
+_date_from date;
+_date_to date;
+_IDHVID text [];
+_flag int = 0;
+
+begin
+
+if xml_file is DOCUMENT	--проверка на состав XML
+	then 
+	is_doc = 'Документ xml в корректном формате';
+	raise notice '%', is_doc;
+	status = xpath('/packet/zglv/type/text()', xml_file);
+	
+	for data in 
+	(
+	SELECT unnest (xpath('//zap', xml_file)) xml_part
+	)
+	loop
+	raise notice '%', data;
+	i = i+1;
+	_IDHVID = cast (xpath('//zap/IDHVID/text()', data.xml_part) as text[]);
+	_name = array_to_string (cast (xpath('//zap[HVIDNAME != ''{}'']/HVIDNAME/text()', DATA.xml_part) as text[]),',');
+	_code = array_to_string (_IDHVID,',');
+	_date_from = to_date (array_to_string (cast (xpath('//zap[DATEBEG != ''{}'']/DATEBEG/text()', DATA.xml_part) as text[]),','),'dd.mm.yyyy');
+	_date_to = to_date (array_to_string (cast (xpath('//zap[DATEEND != ''{}'']/DATEEND/text()', DATA.xml_part) as text[]),','),'dd.mm.yyyy');
+	if 
+	_IDHVID!= '{}'			--проверка поля IDHVID непустое
+	then 	
+			 if not _IDHVID <@ (select array_agg (coalesce (code, '')) from code) or (select array_agg (id) from code ) is null--проверка на уникальность
+				 then
+				 insert into xmltest (data, id) VALUES (data.xml_part,i);
+				 insert into names (id, name) values (i, _name);
+				 insert into code (id, code) values (i, _code);
+				 insert into dates (id, from_dt, to_dt) values (i, _date_from, _date_to);
+
+				else raise notice 'Запись с таким id существует';
+				insert into log (id, error, time) values (i, 'Запись с таким кодом '||array_to_string(_IDHVID,',')||' существует' ,LOCALTIMESTAMP);	
+				_flag = _flag + 1;
+			 end if;
+	else insert into log (id, error, time) values (i,'Для записи '
+	||_name||' '
+	||_date_from||' '
+	||_date_to||' '
+	||'не заполнено поле IDHVID', LOCALTIMESTAMP);
+			_flag = _flag + 1;
+	end if;
+	end loop;
+		if _flag = 0 then
+		status = 'Файл успешно преобразован';
+		else status = 'При обработке файла возникли проблемы. Посмотрите лог';
+		end if;
+	else 
+	is_doc = 'Документ xml оформлен в виде фрагмента, необходимо выполнить преобразование';
+	raise exception 'Ошибка исполнения %', is_doc;
+end if; 
+end
+$body$
+language 'plpgsql';

@@ -1,0 +1,29 @@
+CREATE TABLE xmltest (
+    id int,
+    data xml NOT NULL
+);
+
+
+CREATE TABLE code (
+    id int,
+    code text
+);
+
+CREATE TABLE names (
+    id int,
+    name text
+);
+
+
+CREATE TABLE dates (
+    id int,
+    from_dt date,
+		to_dt date
+);
+
+
+CREATE TABLE log (
+    id int,
+    error text,
+		time timestamp
+);
